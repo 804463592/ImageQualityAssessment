@@ -6,24 +6,19 @@
 using namespace std;
 using namespace cv;
 
+
 Mat combineImages(vector<Mat>imgs,//@parameter1:需要显示的图像组 
 	int col,//parameter2:显示的列数
 	int row, //parameter3:显示的行数
-	bool hasMargin) {//parameter4:是否设置边框
+	bool hasMargin) //parameter4:是否设置边框
+{
 	int imgAmount = imgs.size();//获取需要显示的图像数量
-
-	int width(0), height(0);
-	for (int i = 0; i < imgs.size(); i++)
-	{
-		if (width < imgs[i].cols) width = imgs[i].cols;
-		if (height < imgs[i].rows)height = imgs[i].rows;
-	}
-	//int width = imgs[0].cols;//本函数默认需要显示的图像大小相同
-	//int height = imgs[0].rows;//获取图像宽高
+	int width = imgs[0].cols;//本函数默认需要显示的图像大小相同
+	int height = imgs[0].rows;//获取图像宽高
 	int newWidth, newHeight;//新图像宽高
 	if (!hasMargin) {
-		newWidth = col * width;//无边框，新图像宽/高=原图像宽/高*列/行数
-		newHeight = row * height;
+		newWidth = col * imgs[0].cols;//无边框，新图像宽/高=原图像宽/高*列/行数
+		newHeight = row * imgs[0].rows;
 	}
 	else {
 		newWidth = (col + 1) * 20 + col * width;//有边框，要将上边框的尺寸，这里设置边框为20px
@@ -37,7 +32,7 @@ Mat combineImages(vector<Mat>imgs,//@parameter1:需要显示的图像组
 		imgCount = 0;
 		x = 0; y = 0;
 		while (imgCount < imgAmount) {
-			Mat imageROI = newImage(Rect(x*width + (x + 1) * 20, y*height + (y + 1) * 20, imgs[imgCount].cols, imgs[imgCount].rows));//创建感兴趣区域
+			Mat imageROI = newImage(Rect(x*width + (x + 1) * 20, y*height + (y + 1) * 20, width, height));//创建感兴趣区域
 			imgs[imgCount].copyTo(imageROI);//将图像复制到大图中
 			imgCount++;
 			if (x == (col - 1)) {
@@ -53,7 +48,7 @@ Mat combineImages(vector<Mat>imgs,//@parameter1:需要显示的图像组
 		imgCount = 0;
 		x = 0; y = 0;
 		while (imgCount < imgAmount) {
-			Mat imageROI = newImage(Rect(x*width, y*height, imgs[imgCount].cols, imgs[imgCount].rows));
+			Mat imageROI = newImage(Rect(x*width, y*height, width, height));
 			imgs[imgCount].copyTo(imageROI);
 			imgCount++;
 			if (x == (col - 1)) {

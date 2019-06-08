@@ -10,64 +10,73 @@ using namespace cv;
 #include<string>
 #include <io.h>
 #include <fstream>
-#include"ConbineImg.h"
+//#include"ConbineImg.h"
 
 
-//Mat combineImages(vector<Mat>imgs,//@parameter1:需要显示的图像组 
-//	int col,//parameter2:显示的列数
-//	int row, //parameter3:显示的行数
-//	bool hasMargin) //parameter4:是否设置边框
-//{
-//	int imgAmount = imgs.size();//获取需要显示的图像数量
-//	int width = imgs[0].cols;//本函数默认需要显示的图像大小相同
-//	int height = imgs[0].rows;//获取图像宽高
-//	int newWidth, newHeight;//新图像宽高
-//	if (!hasMargin) {
-//		newWidth = col * imgs[0].cols;//无边框，新图像宽/高=原图像宽/高*列/行数
-//		newHeight = row * imgs[0].rows;
-//	}
-//	else {
-//		newWidth = (col + 1) * 20 + col * width;//有边框，要将上边框的尺寸，这里设置边框为20px
-//		newHeight = (row + 1) * 20 + row * height;
-//	}
-//
-//	Mat newImage(newHeight, newWidth, CV_8UC3, Scalar(255, 255, 255));//显示创建设定尺寸的新的大图像；色深八位三通道；填充为白色
-//
-//	int x, y, imgCount;//x列号，y行号，imgCount图片序号
-//	if (hasMargin) {//有边框
-//		imgCount = 0;
-//		x = 0; y = 0;
-//		while (imgCount < imgAmount) {
-//			Mat imageROI = newImage(Rect(x*width + (x + 1) * 20, y*height + (y + 1) * 20, width, height));//创建感兴趣区域
-//			imgs[imgCount].copyTo(imageROI);//将图像复制到大图中
-//			imgCount++;
-//			if (x == (col - 1)) {
-//				x = 0;
-//				y++;
-//			}
-//			else {
-//				x++;
-//			}//移动行列号到下一个位置
-//		}
-//	}
-//	else {//无边框
-//		imgCount = 0;
-//		x = 0; y = 0;
-//		while (imgCount < imgAmount) {
-//			Mat imageROI = newImage(Rect(x*width, y*height, width, height));
-//			imgs[imgCount].copyTo(imageROI);
-//			imgCount++;
-//			if (x == (col - 1)) {
-//				x = 0;
-//				y++;
-//			}
-//			else {
-//				x++;
-//			}
-//		}
-//	}
-//	return newImage;//返回新的组合图像
-//};
+Mat combineImages(vector<Mat>imgs,//@parameter1:需要显示的图像组 
+	int col,//parameter2:显示的列数
+	int row, //parameter3:显示的行数
+	bool hasMargin) {//parameter4:是否设置边框
+	int imgAmount = imgs.size();//获取需要显示的图像数量
+
+	int width(0), height(0);
+	for (int i = 0; i < imgs.size(); i++)
+	{
+		if (width < imgs[i].cols) width = imgs[i].cols;
+		if (height < imgs[i].rows)height = imgs[i].rows;
+	}
+	//int width = imgs[0].cols;//本函数默认需要显示的图像大小相同
+	//int height = imgs[0].rows;//获取图像宽高
+	int newWidth, newHeight;//新图像宽高
+	if (!hasMargin) {
+		newWidth = col * width;//无边框，新图像宽/高=原图像宽/高*列/行数
+		newHeight = row * height;
+	}
+	else {
+		newWidth = (col + 1) * 20 + col * width;//有边框，要将上边框的尺寸，这里设置边框为20px
+		newHeight = (row + 1) * 20 + row * height;
+	}
+
+	Mat newImage(newHeight, newWidth, CV_8UC3, Scalar(255, 255, 255));//显示创建设定尺寸的新的大图像；色深八位三通道；填充为白色
+
+	int x, y, imgCount;//x列号，y行号，imgCount图片序号
+	if (hasMargin) {//有边框，为固定值20
+		imgCount = 0;
+		x = 0; y = 0;
+		while (imgCount < imgAmount) {
+			Mat imageROI = newImage(Rect(x*width + (x + 1) * 20, y*height + (y + 1) * 20, imgs[imgCount].cols, imgs[imgCount].rows));//创建感兴趣区域
+			imgs[imgCount].copyTo(imageROI);//将图像复制到大图中
+			imgCount++;
+			if (x == (col - 1)) {
+				x = 0;
+				y++;
+			}
+			else {
+				x++;
+			}//移动行列号到下一个位置
+		}
+	}
+	else {//无边框
+		imgCount = 0;
+		x = 0; y = 0;
+
+		while (imgCount < imgAmount) {
+			Mat imageROI = newImage(Rect(x*width, y*height, imgs[imgCount].cols, imgs[imgCount].rows));
+			imgs[imgCount].copyTo(imageROI);
+			imgCount++;
+			if (x == (col - 1)) {
+				x = 0;
+				y++;
+			}
+			else {
+				x++;
+			}
+		}
+	}
+	return newImage;//返回新的组合图像
+};
+
+
 
 
 /*
@@ -156,13 +165,12 @@ void mean_std(const Mat & grayImg, double & mean, double & std) {
 
 double getMSE(const Mat & src1, const Mat & src2)
 {
-	//形状不一样直接退出
+	//形状不一样直接退出程序
 	if (src1.cols != src2.cols || src1.rows != src2.rows)
 	{
 		cout << "the sizes of these images are not of the same! " << endl;
 		exit(0);
 	}
-
 	Mat s1;
 	absdiff(src1, src2, s1);    // |src1 - src2|
 	s1.convertTo(s1, CV_32F);   // 不能在8位矩阵上做平方运算
@@ -184,7 +192,7 @@ double getMSE(const Mat & src1, const Mat & src2)
 
 double getPSNR(const Mat& src1, const Mat& src2, double MSE) {
 	if (MSE <= 1e-10) {
-		return 10000;
+		return 100;
 	}
 	return 10.0*log10((255 * 255) / MSE);
 }
@@ -200,7 +208,7 @@ double getMSSIM(const Mat& src1, const Mat& src2)
 	Mat I1, I2;
 	src1.convertTo(I1, TYPE);
 	src2.convertTo(I2, TYPE);
-
+	
 	Mat I2_2 = I2.mul(I2);  // I2^2
 	Mat I1_2 = I1.mul(I1);  // I1^2
 	Mat I1_I2 = I1.mul(I2); // I1*I2
@@ -209,16 +217,18 @@ double getMSSIM(const Mat& src1, const Mat& src2)
 	Mat mu1, mu2;
 	GaussianBlur(I1, mu1, Size(11, 11), 1.5);
 	GaussianBlur(I2, mu2, Size(11, 11), 1.5);
-	Mat mu1_2 = mu1.mul(mu1);
+	Mat mu1_2 = mu1.mul(mu1);  
 	Mat mu2_2 = mu2.mul(mu2);
 	Mat mu1_mu2 = mu1.mul(mu2);
+
 	Mat sigma1_2, sigma2_2, sigma12;
-	GaussianBlur(I1_2, sigma1_2, Size(11, 11), 1.5);
-	sigma1_2 -= mu1_2;
+	GaussianBlur(I1_2, sigma1_2, Size(11, 11), 1.5);  //sigma1_2  =E(x^2)
+	sigma1_2 -= mu1_2;   //sigma1_2:  sigma_x_2 = E(x^2) -(E(x))^2
 	GaussianBlur(I2_2, sigma2_2, Size(11, 11), 1.5);
 	sigma2_2 -= mu2_2;
-	GaussianBlur(I1_I2, sigma12, Size(11, 11), 1.5);
+	GaussianBlur(I1_I2, sigma12, Size(11, 11), 1.5);  //cov(x,y) =E(xy)-E(x)E(y)
 	sigma12 -= mu1_mu2;
+
 	Mat t1, t2, t3;
 	t1 = 2 * mu1_mu2 + C1;
 	t2 = 2 * sigma12 + C2;
@@ -231,7 +241,6 @@ double getMSSIM(const Mat& src1, const Mat& src2)
 	Scalar SSIM = mean(ssim_map);
 	// 返回三个通道的SSIM的平均值，[0,1]之间
 	return (SSIM.val[2] + SSIM.val[1] + SSIM.val[0]) / 3;
-
 }
 
 //Tenengrad梯度方法、Laplacian梯度方法
@@ -282,16 +291,32 @@ double meanStdValCount(Mat& imageSource)
 }
 
 
-void putTextOnImg(Mat& imageSource, double meanValue,string attention_Str ="My IQA score : ",int x=20,int y=50)
+void putTextOnImg(Mat& imageSource, double meanValue, string attention_Str = "MyIQA: ", int x = 20, int y = 50)
 {
+	int white_width = 220, white_height = 30;
+	Mat newImage(white_height,white_width, CV_8UC3, Scalar(255, 255, 255));//height * width,色深八位三通道；填充为白色
+	Mat imageROI = imageSource(Rect(x,y-23, white_width,white_height));//x，y，width * height, 向右为x，向下为y创建原图中的感兴趣区域.
+	newImage.copyTo(imageROI);
+
+	////也可以直接遍历元素，将putText的区域变为白色
+	//for (int i = y-23; i < y+ white_height; i++)  
+	//	for (int j =x; j < x+ white_width; j++)
+	//	{
+	//		imageSource.at<Vec3b>(i, j)[0] = 255; //i 是rows，j是cols,也就是 行和列
+	//		imageSource.at<Vec3b>(i, j)[1] = 255;
+	//		imageSource.at<Vec3b>(i, j)[2] = 255;
+	//	}
+//	imshow("imagesoure:", imageSource);
+//	waitKey();
+
 	//double to string
 	stringstream meanValueStream;
 	string meanValueString;
 	meanValueStream << meanValue;
 	meanValueStream >> meanValueString;
 	meanValueString = attention_Str + meanValueString;
-	putText(imageSource, meanValueString, Point(x, y), CV_FONT_HERSHEY_COMPLEX, 0.8, Scalar(25, 255, 25), 2);
-	
+	//putText on image
+	putText(imageSource, meanValueString, Point(x, y), CV_FONT_HERSHEY_COMPLEX, 0.8, Scalar(25, 25, 255), 2);
 }
 
 double imgQualityAssess(Mat& img)
@@ -305,7 +330,7 @@ double imgQualityAssess(Mat& img)
 }
 
 void runDefalut()
-{
+{//读取当前可执行文件所在的文件夹内的jpg图片
 	string *imgFilePath = new string[5];
 	for (int i = 0; i < 5; i++)
 	{
@@ -338,7 +363,7 @@ void runDefalut()
 		double mse = getMSE(imgVec[i], referenceImg);
 		double score = getPSNR(imgVec[i], referenceImg, mse);
 		psnrScoreVec.push_back(score);
-		putTextOnImg(imgVec[i], score, "PSNR score:", 20, 80);
+		putTextOnImg(imgVec[i], score, "PSNR :", 20, 80);
 	}
 
 	//SSIM:SSIM值越大，图像质量越好
@@ -348,7 +373,7 @@ void runDefalut()
 	{
 		double ssimScore = getMSSIM(imgVec[i], referImg);
 		ssimScoreVec.push_back(ssimScore);
-		putTextOnImg(imgVec[i], ssimScore, "SSIM score:", 20, 110);
+		putTextOnImg(imgVec[i], ssimScore, "SSIM :", 20, 110);
 	}
 	Mat tImg = combineImages(imgVec, 2, 3, true);
 	namedWindow("testImg", 0);
@@ -359,6 +384,7 @@ void runDefalut()
 }
 void getAllFiles(string path, vector<string>& files,string fileType =".png")
 {
+	//TODO:暂时不考虑搜索特定的文件类型，我们先默认该文件夹内只有图片类型，没有其他比如txt
 	//文件句柄
 	intptr_t hFile = 0;
 	//文件信息
@@ -384,7 +410,6 @@ void getAllFiles(string path, vector<string>& files,string fileType =".png")
 void runByUserPath(string path)
 {
 	bool isSizeSame(true);
-
 	//string *imgfilePath = new string[n];
 	vector<string> imgPathVec;
 	//TODO:后续考虑只获取该路径
@@ -410,7 +435,6 @@ void runByUserPath(string path)
 			break;
 		}
 	}
-
 	for (int i = 0; i < imgVec.size(); i++)
 	{
 		double myIQAsre, psnrSre, ssimSre;
@@ -445,7 +469,6 @@ int main()
 	//{
 	//	cout << temp[i] << endl;
 	//}
-
 	string str;
 	cout << "please enter instruction！enter help for help" << endl;
 	bool ctrl_flag = true;
@@ -469,8 +492,8 @@ int main()
 			{//运行用户自定义的数据，目前暂时认为所有图片大小一致
 				cout << "plz insert img path（eg:F://testImg）:" << endl;
 				string imgPath;
-				imgPath = "F:\\testImg2";
-				//cin >> imgPath;
+				//imgPath = "F:\\testImg2";
+				cin >> imgPath;
 				cout << "path:" << imgPath << endl;
 				//string isSizeSame;
 				//bool isSame;
@@ -492,7 +515,6 @@ int main()
 				//		cout << "plz reinput" << endl;
 				//	}
 				//}
-	
 				runByUserPath(imgPath);
 			}
 			else if (str == "runSingle" or str =="rs")
