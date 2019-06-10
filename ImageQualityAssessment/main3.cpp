@@ -11,6 +11,204 @@ using namespace cv;
 #include <io.h>
 #include <fstream>
 //#include"ConbineImg.h"
+#include<math.h>
+
+Mat Rgb2YIQ(Mat&frame)
+{
+	//输入rgb的mat型图
+	Mat dst = frame.clone();
+	frame.convertTo(frame, CV_32FC3);
+	dst.convertTo(dst, CV_32FC3);
+	//逐行逐列逐像素点的转换，虽然at速度不快，但这里计算量不算大
+	for (int i = 0; i < frame.rows; i++)
+	{
+		for (int j = 0; j < frame.cols; j++) {
+			//注意顺序是BGR，因此YIQ对应RGB，QIY 对应于BGR
+			dst.at<Vec3f>(i, j)[2] = saturate_cast<float>(((0.299*frame.at<Vec3f>(i, j)[2] +
+				0.587*frame.at<Vec3f>(i, j)[1] +
+				0.114*frame.at<Vec3f>(i, j)[0])) / 255);
+			dst.at<Vec3f>(i, j)[1] = saturate_cast<float>(((0.596*frame.at<Vec3f>(i, j)[2] +
+				-0.274*frame.at<Vec3f>(i, j)[1] +
+				-0.322*frame.at<Vec3f>(i, j)[0])) / 255);
+			dst.at<Vec3f>(i, j)[0] = saturate_cast<float>(((0.211*frame.at<Vec3f>(i, j)[2] +
+				-0.523*frame.at<Vec3f>(i, j)[1] +
+				0.312*frame.at<Vec3f>(i, j)[0])) / 255) * 200;
+		}
+	}
+	return dst;//返回YIQ形式的mat
+}
+
+double  yiqIQA(Mat& igd, Mat&  igr)
+{
+
+	Mat imgd = igd.clone();
+	Mat imgr = igr.clone();
+	//转换到YIQ空间
+	Mat yiqr = Rgb2YIQ(imgr);
+	Mat yiqd = Rgb2YIQ(imgd);
+
+	//分离Y分量
+	Mat mvr[3];
+	split(yiqr, mvr);
+	Mat yiqr_Y = mvr[2];   //Y分量顺序对应R的顺序
+	Mat mvd[3];
+	split(yiqd, mvd);
+	Mat yiqd_Y = mvd[2];
+
+	//准备初始计算量
+	Mat u_r, u_d;   //参考图像和失真图像均值
+	Mat sigma_r2;   //参考图像方差
+	Mat sigma_rd;  //协方差
+
+	//imshow("u_r ", yiqr_Y);
+	//	imshow("u_d ", yiqd_Y);
+
+	GaussianBlur(yiqr_Y, u_r, Size(11, 11), 1.5);
+	GaussianBlur(yiqd_Y, u_d, Size(11, 11), 1.5);
+
+	Mat yiqr_Y2 = yiqr_Y.mul(yiqr_Y);
+	Mat u_r2 = u_r.mul(u_r);
+	GaussianBlur(yiqr_Y2, sigma_r2, Size(11, 11), 1.5);  //sigma_r2 =E(x^2)
+	sigma_r2 -= u_r2;   //sigma_r2 =E(x^2) - (E(x))^2
+
+	Mat yiqr_Y_yiqd_Y = yiqr_Y.mul(yiqd_Y);
+	Mat ur_ud;
+	ur_ud = u_r.mul(u_d);
+	GaussianBlur(yiqr_Y_yiqd_Y, sigma_rd, Size(11, 11), 1.5);  //sigma_rd =E(xy)
+	sigma_rd -= ur_ud;	  //cov(x,y) =E(xy) -E(x)E(y) 
+
+	u_r.convertTo(u_r, CV_32FC1);
+	u_d.convertTo(u_d, CV_32FC1);
+	sigma_r2.convertTo(sigma_r2, CV_32FC1);
+	sigma_rd.convertTo(sigma_rd, CV_32FC1);
+
+	//u_r,u_d,sigma_r2,sigma_rd全部存为数组，用于计算
+	int width = u_r.cols;
+	int height = u_d.rows;
+
+	double** ur_arr = new double*[height];
+	double** ud_arr = new double*[height];
+	double** sigmar2_arr = new double*[height];
+	double** sigmard_arr = new double*[height];
+
+	for (int i = 0; i < height; i++)
+	{
+		ur_arr[i] = new double[width];
+		ud_arr[i] = new double[width];
+		sigmar2_arr[i] = new double[width];
+		sigmard_arr[i] = new double[width];
+	}
+	for (int i = 0; i < height; i++)
+	{
+		for (int j = 0; j < width; j++)
+		{
+			ur_arr[i][j] = u_r.at<float>(i, j);  //如果使用uchar，则不能存小数 
+
+			ud_arr[i][j] = u_d.at<float>(i, j);
+			sigmar2_arr[i][j] = sigma_r2.at<float>(i, j);
+			sigmard_arr[i][j] = sigma_rd.at<float>(i, j);
+			//cout << "sigmard_arr[i][j] " << sigmard_arr[i][j] << endl;
+		}
+	}
+	//计算参考图像与失真图像的亮度变化ls_lc
+	double **ls_lc = new double*[height];
+	for (int i = 0; i < height; i++)
+	{
+		ls_lc[i] = new double[width];
+	}
+	for (int i = 0; i < height; i++)
+	{
+		for (int j = 0; j < width; j++)
+		{  //alpha1=1,alpha2 =1;
+			ls_lc[i][j] = exp(-abs(ur_arr[i][j] - ud_arr[i][j]) / 255)  *  log(1 + (sigmard_arr[i][j] + 0.01) / (sigmar2_arr[i][j] + 0.01));
+		}
+	}
+	/*色度失真因子, 当对比度变化较大时也会引起色彩的失真*/
+	//分离I，Q分量
+	Mat yiqr_I = mvr[1];   //Y分量顺序对应R的顺序,YIQ<->RGB
+	Mat yiqd_I = mvd[1];
+
+	Mat yiqr_Q = mvr[0];
+	Mat yiqd_Q = mvd[0];
+
+	//转换 格式,不过貌似本来的格式就是CV_32FC1
+	yiqr_I.convertTo(yiqr_I, CV_32FC1);
+	yiqd_I.convertTo(yiqd_I, CV_32FC1);
+	yiqr_Q.convertTo(yiqr_Q, CV_32FC1);
+	yiqd_Q.convertTo(yiqd_Q, CV_32FC1);
+
+	double** CIQ = new double*[height];
+
+	for (int i = 0; i < height; i++)
+	{
+		CIQ[i] = new double[width];
+	}
+
+	for (int i = 0; i < height; i++)
+	{
+		for (int j = 0; j < width; j++)
+		{
+			double Ir = yiqr_I.at<float>(i, j);
+			//cout << "	Ir[i][j] " << Ir[i][j] <<endl;
+			double Id = yiqd_I.at<float>(i, j);
+			double Qr = yiqr_Q.at<float>(i, j);
+			double Qd = yiqd_Q.at<float>(i, j);
+			//色度失真因子Ciq
+			CIQ[i][j] = (2 * Ir*Id + 0.01)*(2 * Qr*Qd + 0.01) / ((Ir*Ir + Id * Id + 0.01)*(Qr*Qr + Qd * Qd + 0.01));
+		}
+	}
+	/*基于亮度强度的权重图,  选择参考图像和失真图像中亮度较强者作
+为权重系数来衡量各个像素对整张图像质量影响*/
+	double **w = new double*[height];
+	for (int i = 0; i < height; i++)
+	{
+		w[i] = new double[width];
+	}
+	for (int i = 0; i < height; i++)
+	{
+		for (int j = 0; j < width; j++)
+		{
+			w[i][j] = min(exp(-abs(ur_arr[i][j] / 255)), exp(-abs(ud_arr[i][j] / 255)));
+		}
+	}
+	/*对比度变化的图像质量分数*/
+	double yiqIQAsre = 0;
+	double sum_w = 0;
+	double sum_slw = 0;
+	for (int i = 0; i < height; i++)
+	{
+		for (int j = 0; j < width; j++)
+		{
+			sum_slw += CIQ[i][j] * ls_lc[i][j] * w[i][j];
+			sum_w += w[i][j];
+		}
+	}
+
+	yiqIQAsre = sum_slw / sum_w;
+
+	//TODO：delete :   ur_arr,ud_arr,sigma_r2,sigma_rd等数组
+	for (int i = 0; i < height; i++)
+	{
+		delete[] ur_arr[i];
+		delete[] ud_arr[i];
+		delete[] sigmar2_arr[i];
+		delete[] sigmard_arr[i];
+		delete[] ls_lc[i];
+		delete[] CIQ[i];
+		delete[] w[i];
+	}
+	delete[]ur_arr;
+	delete[]ud_arr;
+	delete[] sigmar2_arr;
+	delete[] sigmard_arr;
+	delete[] ls_lc;
+	delete[] CIQ;
+	delete[] w;
+
+	//printf("CCIQA:%.3f", yiqIQAsre);
+	return yiqIQAsre;
+}
+
 
 
 Mat combineImages(vector<Mat>imgs,//@parameter1:需要显示的图像组 
@@ -217,6 +415,13 @@ double getMSSIM(const Mat& src1, const Mat& src2)
 	Mat mu1, mu2;
 	GaussianBlur(I1, mu1, Size(11, 11), 1.5);
 	GaussianBlur(I2, mu2, Size(11, 11), 1.5);
+
+	/*namedWindow("imgr", 0);
+	imshow("imgr", mu1);
+	cvNamedWindow("imgd", 0);
+	imshow("imgd", mu2);
+	waitKey();*/
+
 	Mat mu1_2 = mu1.mul(mu1);  
 	Mat mu2_2 = mu2.mul(mu2);
 	Mat mu1_mu2 = mu1.mul(mu2);
@@ -286,14 +491,13 @@ double meanStdValCount(Mat& imageSource)
 	meanStdDev(imageGrey, meanValueImage, meanStdValueImage);
 	double meanValue = 0.0;
 	meanValue = meanStdValueImage.at<double>(0, 0);
-
 	return meanValue;
 }
 
 
 void putTextOnImg(Mat& imageSource, double meanValue, string attention_Str = "MyIQA: ", int x = 20, int y = 50)
 {
-	int white_width = 220, white_height = 30;
+	int white_width = 280, white_height = 30;
 	Mat newImage(white_height,white_width, CV_8UC3, Scalar(255, 255, 255));//height * width,色深八位三通道；填充为白色
 	Mat imageROI = imageSource(Rect(x,y-23, white_width,white_height));//x，y，width * height, 向右为x，向下为y创建原图中的感兴趣区域.
 	newImage.copyTo(imageROI);
@@ -322,10 +526,11 @@ void putTextOnImg(Mat& imageSource, double meanValue, string attention_Str = "My
 double imgQualityAssess(Mat& img)
 {
 	double score =0;
-	double meanValue = meanStdValCount(img);
-	double gradValue = gradCount(img, "Sobel");
-	double entropyVal = entropy(img);
-	score = 0.4*meanValue + 0.35*gradValue +0.25*entropyVal;
+	double meanStdVal = meanStdValCount(img);  //标准差
+	double gradValue = gradCount(img, "Sobel");  //平均梯度
+	double entropyVal = entropy(img);   //信息熵
+	//double meanGrad = meanGradient(img);
+	score = 0.4*meanStdVal+ 0.35*gradValue +0.25*entropyVal ;
 	return score;
 }
 
@@ -355,7 +560,7 @@ void runDefalut()
 		scoreVec.push_back(score);
 		putTextOnImg(imgVec[i], score);
 	}
-	//PSNR,PSNR值越大，表明待评图像与参考图像之间的失真较小，图像质量较好。
+	//PSNR:PSNR值越大，表明待评图像与参考图像之间的失真较小，图像质量较好。
 	vector<double> psnrScoreVec;
 	Mat  referenceImg = imgVec[imgVec.size() - 1];
 	for (int i = 0; i < imgVec.size(); i++)
@@ -385,6 +590,7 @@ void runDefalut()
 void getAllFiles(string path, vector<string>& files,string fileType =".png")
 {
 	//TODO:暂时不考虑搜索特定的文件类型，我们先默认该文件夹内只有图片类型，没有其他比如txt
+
 	//文件句柄
 	intptr_t hFile = 0;
 	//文件信息
@@ -435,27 +641,66 @@ void runByUserPath(string path)
 			break;
 		}
 	}
+
 	for (int i = 0; i < imgVec.size(); i++)
 	{
+		//computing
 		double myIQAsre, psnrSre, ssimSre;
 		myIQAsre = imgQualityAssess(imgVec[i]);
-		putTextOnImg(imgVec[i], myIQAsre, "my IQA:", 20, 50);
+		putTextOnImg(imgVec[i], myIQAsre, "MGE:" ,20, 50);
 
 		if (isSizeSame==true)
 		{
+			double yiqiqa = yiqIQA(imgVec[i], imgVec[imgVec.size() - 1]);
+			putTextOnImg(imgVec[i], yiqiqa, "yiqIQA:", 20, 80);
+
 			double mse = getMSE(imgVec[i], imgVec[imgVec.size() - 1]);
 			psnrSre = getPSNR(imgVec[i], imgVec[imgVec.size() - 1], mse);
-			putTextOnImg(imgVec[i], psnrSre, "PSNR:", 20, 80);
+			putTextOnImg(imgVec[i], psnrSre, "PSNR:", 20, 110);
 
 			ssimSre = getMSSIM(imgVec[i], imgVec[imgVec.size() - 1]);
-			putTextOnImg(imgVec[i], ssimSre, "SSIM:", 20, 110);
+			putTextOnImg(imgVec[i], ssimSre, "SSIM:", 20, 140);
 		}
+		//the img name
+	   for (int p = 0; p < 30; p++)  
+		     for (int q =20; q <500; q++)
+		    {
+			imgVec[i].at<Vec3b>(p, q)[0] = 255; //p 是rows，q是cols,也就是 行和列
+			imgVec[i].at<Vec3b>(p, q)[1] = 255;
+			imgVec[i].at<Vec3b>(p, q)[2] = 255;
+		     }
+		putText(imgVec[i], imgPathVec[i], Point(20, 20), FONT_HERSHEY_COMPLEX, 0.8, Scalar(255, 25, 25), 2);
 	}
-	//TODO：考虑如何根据图片数量，自动生成如何排列图片的列数和行数，cols,rows,
-	int cols = 4, rows = 2;
-	//int col = int(sqrt(imgVec.size()));
+	//TODO：考虑根据图片数量，生成如何排列图片的列数和行数，cols,rows,
+	int n= imgVec.size();
+	int cols = 4, rows = 3;
+	if (0 > n && n <= 4)
+	{
+		cols = 2; rows = 2;
+	}
+	else if (n >= 5 && n <= 8)
+	{
+		if (n <= 6)
+		{
+			cols = 3, rows = 2;
+		}
+		else {
+			cols = 4; rows = 2;
+		}
+	
+	}
+	else if (n >= 9 && n <= 12)
+	{
+		if (n == 9) { cols = 3; rows = 3; }
+		cols = 4; rows = 3;
+	}
+	else {
+		//s.t.  cols * rows >n
+		cols = int(sqrt(n)) + 1;
+		rows = cols;
+	}
 
-	Mat img = combineImages(imgVec, cols, rows, false);
+	Mat img = combineImages(imgVec, cols, rows, true);
 	namedWindow("testImg", 0);
 	imshow("testImg", img);
 	waitKey();
@@ -489,11 +734,12 @@ int main()
 				runDefalut();
 			}
 			else if (str == "runUserPath" or str =="ru")
-			{//运行用户自定义的数据，目前暂时认为所有图片大小一致
+			{//运行用户自定义的数据，目前暂时认为所有图片大小一致,如果不一致，则全部按照最大的图片尺寸拼接在一起
 				cout << "plz insert img path（eg:F://testImg）:" << endl;
 				string imgPath;
-				//imgPath = "F:\\testImg2";
-				cin >> imgPath;
+				//imgPath = "F://testImg//testImg2";
+				imgPath = "F://testImg//aligned_fru";
+				//cin >> imgPath;
 				cout << "path:" << imgPath << endl;
 				//string isSizeSame;
 				//bool isSame;
