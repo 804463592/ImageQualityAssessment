@@ -60,9 +60,6 @@ double  yiqIQA(Mat& igd, Mat&  igr)
 	Mat sigma_r2;   //参考图像方差
 	Mat sigma_rd;  //协方差
 
-	//imshow("u_r ", yiqr_Y);
-	//	imshow("u_d ", yiqd_Y);
-
 	GaussianBlur(yiqr_Y, u_r, Size(11, 11), 1.5);
 	GaussianBlur(yiqd_Y, u_d, Size(11, 11), 1.5);
 
@@ -102,12 +99,12 @@ double  yiqIQA(Mat& igd, Mat&  igr)
 	{
 		for (int j = 0; j < width; j++)
 		{
-			ur_arr[i][j] = u_r.at<float>(i, j);  //如果使用uchar，则不能存小数 
+			ur_arr[i][j] = u_r.at<float>(i, j);  //如果使用uchar，8位，不能存小数 
 
 			ud_arr[i][j] = u_d.at<float>(i, j);
 			sigmar2_arr[i][j] = sigma_r2.at<float>(i, j);
 			sigmard_arr[i][j] = sigma_rd.at<float>(i, j);
-			//cout << "sigmard_arr[i][j] " << sigmard_arr[i][j] << endl;
+		
 		}
 	}
 	//计算参考图像与失真图像的亮度变化ls_lc
@@ -120,7 +117,7 @@ double  yiqIQA(Mat& igd, Mat&  igr)
 	{
 		for (int j = 0; j < width; j++)
 		{  //alpha1=1,alpha2 =1;
-			ls_lc[i][j] = exp(-abs(ur_arr[i][j] - ud_arr[i][j]) / 255)  *  log(1 + (sigmard_arr[i][j] + 0.01) / (sigmar2_arr[i][j] + 0.01));
+			ls_lc[i][j] = exp(-abs(ur_arr[i][j] - ud_arr[i][j]) / 255)  * log(1 + (sigmard_arr[i][j] + 0.001) / (sigmar2_arr[i][j] + 0.001));
 		}
 	}
 	/*色度失真因子, 当对比度变化较大时也会引起色彩的失真*/
@@ -149,12 +146,11 @@ double  yiqIQA(Mat& igd, Mat&  igr)
 		for (int j = 0; j < width; j++)
 		{
 			double Ir = yiqr_I.at<float>(i, j);
-			//cout << "	Ir[i][j] " << Ir[i][j] <<endl;
 			double Id = yiqd_I.at<float>(i, j);
 			double Qr = yiqr_Q.at<float>(i, j);
 			double Qd = yiqd_Q.at<float>(i, j);
 			//色度失真因子Ciq
-			CIQ[i][j] = (2 * Ir*Id + 0.01)*(2 * Qr*Qd + 0.01) / ((Ir*Ir + Id * Id + 0.01)*(Qr*Qr + Qd * Qd + 0.01));
+			CIQ[i][j] = (2 * Ir*Id + 0.01)*(2 * Qr*Qd + 0.001) / ((Ir*Ir + Id * Id + 0.01)*(Qr*Qr + Qd * Qd + 0.001));
 		}
 	}
 	/*基于亮度强度的权重图,  选择参考图像和失真图像中亮度较强者作
@@ -208,8 +204,6 @@ double  yiqIQA(Mat& igd, Mat&  igr)
 	//printf("CCIQA:%.3f", yiqIQAsre);
 	return yiqIQAsre;
 }
-
-
 
 Mat combineImages(vector<Mat>imgs,//@parameter1:需要显示的图像组 
 	int col,//parameter2:显示的列数
@@ -273,9 +267,6 @@ Mat combineImages(vector<Mat>imgs,//@parameter1:需要显示的图像组
 	}
 	return newImage;//返回新的组合图像
 };
-
-
-
 
 /*
  单幅图像信息熵计算
@@ -349,7 +340,7 @@ double meanGradient(Mat & grayImg) {
 	return imageAVG;
 }
 
-/*计算灰度图的均值和方差*/
+/*计算灰度图的均值和方差，实际上后面并没有用到该函数*/
 void mean_std(const Mat & grayImg, double & mean, double & std) {
 	if (grayImg.channels() != 1) {
 		printf("mean_std 参数错误，必须输入单通道图！");
@@ -416,12 +407,6 @@ double getMSSIM(const Mat& src1, const Mat& src2)
 	GaussianBlur(I1, mu1, Size(11, 11), 1.5);
 	GaussianBlur(I2, mu2, Size(11, 11), 1.5);
 
-	/*namedWindow("imgr", 0);
-	imshow("imgr", mu1);
-	cvNamedWindow("imgd", 0);
-	imshow("imgd", mu2);
-	waitKey();*/
-
 	Mat mu1_2 = mu1.mul(mu1);  
 	Mat mu2_2 = mu2.mul(mu2);
 	Mat mu1_mu2 = mu1.mul(mu2);
@@ -479,8 +464,6 @@ double getMSSIM(const Mat& src1, const Mat& src2)
 //计算标准差：
 double meanStdValCount(Mat& imageSource)
 {
-	//Mat imageSource = imread("F:\\立方体4.jpg");
-	//Mat imageSource = imread("F://lenna.bmp");
 	Mat imageGrey;
 
 	cvtColor(imageSource, imageGrey, CV_RGB2GRAY);
@@ -494,10 +477,12 @@ double meanStdValCount(Mat& imageSource)
 	return meanValue;
 }
 
-
-void putTextOnImg(Mat& imageSource, double meanValue, string attention_Str = "MyIQA: ", int x = 20, int y = 50)
+/*
+*功能：将文字显示在图片上
+*imageSource:源图，meanValue和attention_Str:要显示的分数和分数类型；x,y,white_width,white_height显示的白色区域的起始点坐标，宽度高度
+*/
+void putTextOnImg(Mat& imageSource, double meanValue, string attention_Str = "yiqIQA: ", int x = 20, int y = 50, int white_width = 230, int white_height = 30)
 {
-	int white_width = 280, white_height = 30;
 	Mat newImage(white_height,white_width, CV_8UC3, Scalar(255, 255, 255));//height * width,色深八位三通道；填充为白色
 	Mat imageROI = imageSource(Rect(x,y-23, white_width,white_height));//x，y，width * height, 向右为x，向下为y创建原图中的感兴趣区域.
 	newImage.copyTo(imageROI);
@@ -541,22 +526,21 @@ void runDefalut()
 	{
 		string str = "img";
 		imgFilePath[i] = str + std::to_string(i + 1) + ".jpg";
-		//cout << imgFilePath[i] << endl;
 	}
 	vector<Mat> imgVec;
 	for (int k = 0; k < 5; k++)
 	{
 		Mat src = imread(imgFilePath[k]);
 		imgVec.push_back(src);
-		//imshow("fasd", imgVec[k]);
-		//waitKey();
+
 	}
 
-	//my IQA score
+	//yiqIQA score
 	vector<double> scoreVec;
 	for (int i = 0; i < imgVec.size(); i++)
 	{
-		double score = imgQualityAssess(imgVec[i]);
+		//double score = imgQualityAssess(imgVec[i]);
+		double score = yiqIQA(imgVec[i], imgVec[imgVec.size() - 1]);
 		scoreVec.push_back(score);
 		putTextOnImg(imgVec[i], score);
 	}
@@ -590,7 +574,6 @@ void runDefalut()
 void getAllFiles(string path, vector<string>& files,string fileType =".png")
 {
 	//TODO:暂时不考虑搜索特定的文件类型，我们先默认该文件夹内只有图片类型，没有其他比如txt
-
 	//文件句柄
 	intptr_t hFile = 0;
 	//文件信息
@@ -616,7 +599,6 @@ void getAllFiles(string path, vector<string>& files,string fileType =".png")
 void runByUserPath(string path)
 {
 	bool isSizeSame(true);
-	//string *imgfilePath = new string[n];
 	vector<string> imgPathVec;
 	//TODO:后续考虑只获取该路径
 	getAllFiles(path, imgPathVec);
@@ -642,34 +624,42 @@ void runByUserPath(string path)
 		}
 	}
 
+	int x = 10, y = 10;  //结果显示区域左上角的起点
 	for (int i = 0; i < imgVec.size(); i++)
 	{
-		//computing
-		double myIQAsre, psnrSre, ssimSre;
-		myIQAsre = imgQualityAssess(imgVec[i]);
-		putTextOnImg(imgVec[i], myIQAsre, "MGE:" ,20, 50);
+		if(!isSizeSame) {
 
-		if (isSizeSame==true)
+			double meanStdVal = meanStdValCount(imgVec[i]);  //标准差
+			double gradValue = gradCount(imgVec[i], "Sobel");  //平均梯度
+			double entropyVal = entropy(imgVec[i]);   //信息熵
+			//double myIQAsre;
+			//myIQAsre = imgQualityAssess(imgVec[i]);
+			putTextOnImg(imgVec[i], meanStdVal, "meanStd:", x, y+30,250);
+			putTextOnImg(imgVec[i], gradValue, "meanGrad:", x, y + 60,250);
+			putTextOnImg(imgVec[i], entropyVal, "entropyVal:", x, y + 90,250);
+		}
+		else
 		{
 			double yiqiqa = yiqIQA(imgVec[i], imgVec[imgVec.size() - 1]);
-			putTextOnImg(imgVec[i], yiqiqa, "yiqIQA:", 20, 80);
+			putTextOnImg(imgVec[i], yiqiqa, "yiqIQA:", x, y+30);
 
+			double psnrSre, ssimSre;
 			double mse = getMSE(imgVec[i], imgVec[imgVec.size() - 1]);
 			psnrSre = getPSNR(imgVec[i], imgVec[imgVec.size() - 1], mse);
-			putTextOnImg(imgVec[i], psnrSre, "PSNR:", 20, 110);
+			putTextOnImg(imgVec[i], psnrSre, "PSNR:", x, y+60);
 
 			ssimSre = getMSSIM(imgVec[i], imgVec[imgVec.size() - 1]);
-			putTextOnImg(imgVec[i], ssimSre, "SSIM:", 20, 140);
+			putTextOnImg(imgVec[i], ssimSre, "SSIM:", x, y+90);
 		}
-		//the img name
-	   for (int p = 0; p < 30; p++)  
-		     for (int q =20; q <500; q++)
-		    {
-			imgVec[i].at<Vec3b>(p, q)[0] = 255; //p 是rows，q是cols,也就是 行和列
-			imgVec[i].at<Vec3b>(p, q)[1] = 255;
-			imgVec[i].at<Vec3b>(p, q)[2] = 255;
-		     }
-		putText(imgVec[i], imgPathVec[i], Point(20, 20), FONT_HERSHEY_COMPLEX, 0.8, Scalar(255, 25, 25), 2);
+		//text the img name
+	 //  for (int p = 0; p < 40; p++)  
+		//     for (int q =0; q <500; q++)
+		//    {
+		//	imgVec[i].at<Vec3b>(p, q)[0] = 255; //p 是rows，q是cols,也就是 行和列
+		//	imgVec[i].at<Vec3b>(p, q)[1] = 255;
+		//	imgVec[i].at<Vec3b>(p, q)[2] = 255;
+		//     }
+		//putText(imgVec[i], imgPathVec[i], Point(0, 30), FONT_HERSHEY_COMPLEX, 0.8, Scalar(255, 25, 25), 2);
 	}
 	//TODO：考虑根据图片数量，生成如何排列图片的列数和行数，cols,rows,
 	int n= imgVec.size();
@@ -701,6 +691,7 @@ void runByUserPath(string path)
 	}
 
 	Mat img = combineImages(imgVec, cols, rows, true);
+	//imwrite("Img.jpg", img);   //保存图片
 	namedWindow("testImg", 0);
 	imshow("testImg", img);
 	waitKey();
@@ -708,12 +699,6 @@ void runByUserPath(string path)
 
 int main()
 {
-	//vector<string> temp;
-	//getAllFiles("F:\\testImg", temp);
-	//for (int i = 0; i < temp.size(); ++i)
-	//{
-	//	cout << temp[i] << endl;
-	//}
 	string str;
 	cout << "please enter instruction！enter help for help" << endl;
 	bool ctrl_flag = true;
@@ -730,37 +715,17 @@ int main()
 			}
 			else if (str == "runDefault" or str =="rd")  
 			{//运行默认的数据
-				cout << "Default running..." << endl;
+				cout << "Default program is running..." << endl;
 				runDefalut();
 			}
 			else if (str == "runUserPath" or str =="ru")
 			{//运行用户自定义的数据，目前暂时认为所有图片大小一致,如果不一致，则全部按照最大的图片尺寸拼接在一起
-				cout << "plz insert img path（eg:F://testImg）:" << endl;
+				cout << "Please input img path（eg：F://testImg//aligned_Img）:" << endl;
 				string imgPath;
-				//imgPath = "F://testImg//testImg2";
-				imgPath = "F://testImg//aligned_fru";
-				//cin >> imgPath;
+				//imgPath = "F://testImg//aligned_Img";
+				cin >> imgPath;
 				cout << "path:" << imgPath << endl;
-				//string isSizeSame;
-				//bool isSame;
-				//cout << "Are the sizes of the images the same? true or false" << endl;
-				//cin >> isSizeSame;  //bool变量无法通过cin直接输入
-				//while (1)
-				//{
-				//	if (isSizeSame == "true")
-				//	{
-				//		isSame = true;
-				//		break;
-				//	}
-				//	else if (isSizeSame == "false")
-				//	{
-				//		isSame = false;
-				//		break;
-				//	}
-				//	else {
-				//		cout << "plz reinput" << endl;
-				//	}
-				//}
+				cout << "Program is running..." << endl;
 				runByUserPath(imgPath);
 			}
 			else if (str == "runSingle" or str =="rs")
